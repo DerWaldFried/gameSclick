@@ -27,7 +27,7 @@ func checkPrivileges() {
 	}
 }
 
-// Hilfsfunktion: Gibt den absoluten Pfad zur config.toml zurück
+// Helperfunctions for Config Management
 func getConfigPath() (string, error) {
 	configDir, err := os.UserConfigDir()
 	if err != nil {
@@ -80,7 +80,7 @@ func fillConfig() (Config, error) {
 		return Config{}, err
 	}
 
-	// Ordner sicherheitshalber erstellen
+	// Add Folder for Config if not exists
 	os.MkdirAll(filepath.Dir(configPath), 0755)
 
 	pterm.DefaultSection.Println("Setup Your Settings")
@@ -111,7 +111,7 @@ func fillConfig() (Config, error) {
 		AutoSave:      true,
 	}
 
-	// Datei schreiben
+	// Write File
 	f, err := os.Create(configPath)
 	if err != nil {
 		return Config{}, err
@@ -156,6 +156,6 @@ func main() {
 		startSteamInstallation()
 	}
 
-	// On this zone you can work with the loaded config. For example, print the Steam Login:
-	pterm.Info.Printf("Steam Login: %s\n", cfg.SteamUsername)
+	// On this zone you can work with the loaded config. We go directly to main menu.
+	showMainMenu(cfg)
 }
