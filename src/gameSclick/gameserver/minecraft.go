@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 
 	"github.com/DerWaldFried/gameSclick/src/gameSclick/system"
@@ -26,6 +27,19 @@ func (m *MinecraftServer) GetPath() string {
 	return m.BaseDir
 }
 
+func clearTerminal() {
+	// We clear the terminal screen before showing the main menu to provide a clean and organized interface for the user.
+	// This enhances readability and user experience by removing any previous output or clutter from the terminal.
+	var cmd *exec.Cmd
+	if runtime.GOOS == "windows" {
+		cmd = exec.Command("cls")
+	} else {
+		cmd = exec.Command("clear")
+	}
+	cmd.Stdout = os.Stdout
+	cmd.Run()
+}
+
 // Install now takes the server username to build the correct path
 func (m *MinecraftServer) Install(serverUsername string) error {
 	pterm.DefaultSection.Println("Minecraft Installation Setup")
@@ -36,12 +50,15 @@ func (m *MinecraftServer) Install(serverUsername string) error {
 		if err := system.InstallJava(); err != nil {
 			return fmt.Errorf("failed to install Java: %v", err)
 		}
-		return fmt.Errorf("java is not installed. And Operation was attempted to install it. Please run the installation again to continue with Minecraft installation.")
+		return fmt.Errorf("java is installed. And Operation will now continue...")
 	} else {
 		if !system.IsJavaFunctional() {
 			return fmt.Errorf("java is installed but not functional")
 		}
 	}
+
+	clearTerminal()
+	pterm.DefaultSection.Println("Minecraft Installation Setup")
 
 	selected, _ := pterm.DefaultInteractiveSelect.
 		WithDefaultText("Choose the Minecraft System you want to install").
