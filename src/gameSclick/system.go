@@ -44,7 +44,8 @@ func (cfg *Config) addUser() error {
 	// Adding User with no password and no shell access (disabled login)
 	cmd := exec.Command("sudo", "adduser", "--disabled-password", "--gecos", "", cfg.Username)
 	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("could not create user: %v", err)
+		pterm.Info.Printfln("User '%s' already exists. Skipping creation.", cfg.Username)
+		return nil // We can ignore the error if the user already exists, as we just want to ensure the user is present.
 	}
 
 	// Set Passwort (Send with Pipe on chpasswd)
