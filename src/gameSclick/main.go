@@ -144,6 +144,18 @@ func main() {
 		return
 	}
 
+	// --- SYSTEM SETUP ---
+	// Add SystemUser (using cfg.Username)
+	err = cfg.addUser()
+	if err != nil {
+		pterm.Warning.Println(err) // When the user already exists, we can ignore the error and continue with the installation.
+	}
+
+	// --- STEAM SETUP ---
+	if cfg.UseSteam {
+		startSteamInstallation()
+	}
+
 	// On this zone you can work with the loaded config. For example, print the Steam Login:
 	pterm.Info.Printf("Steam Login: %s\n", cfg.SteamUsername)
 }
