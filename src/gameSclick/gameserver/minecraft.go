@@ -3,8 +3,11 @@ package gameserver
 import (
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
+
+	"github.com/DerWaldFried/gameSclick/src/gameSclick/system"
 
 	"github.com/pterm/pterm"
 )
@@ -26,6 +29,14 @@ func (m *MinecraftServer) GetPath() string {
 // Install now takes the server username to build the correct path
 func (m *MinecraftServer) Install(serverUsername string) error {
 	pterm.DefaultSection.Println("Minecraft Installation Setup")
+
+	if !system.CheckJavaInstallation() {
+		return fmt.Errorf("java is not installed")
+	} else {
+		if !system.IsJavaFunctional() {
+			return fmt.Errorf("java is installed but not functional")
+		}
+	}
 
 	selected, _ := pterm.DefaultInteractiveSelect.
 		WithDefaultText("Choose the Minecraft System you want to install").
@@ -65,6 +76,20 @@ func (m *MinecraftServer) Install(serverUsername string) error {
 
 func (m *MinecraftServer) installVanilla() error {
 	pterm.Info.Println("Starting Vanilla Minecraft Installation...")
+
+	// Path for the server jar, e.g., /home/gsuser/server/minecraft/vanilla/minecraft_server.jar
+	jarPath := filepath.Join(m.BaseDir, "minecraft_server.jar")
+
+	// Prepare Download-Command
+	downloadCmd := exec.Command("wget", "-O", jarPath, "https://piston-data.mojang.com/v1/objects/64bb6d763bed0a9f1d632ec347938594144943ed/server.jar")
+
+	// Optional: Usage BaseDir as working directory for the command, so that the jar is downloaded directly to the correct location.
+	// This can help avoid issues with relative paths and ensure that the file ends up in the intended directory.
+	downloadCmd.Dir = m.BaseDir
+
+	if err := downloadCmd.Run(); err != nil {
+		return fmt.Errorf("failed to download Minecraft server jar: %v", err)
+	}
 
 	return nil
 }
