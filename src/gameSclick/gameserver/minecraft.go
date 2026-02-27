@@ -31,7 +31,12 @@ func (m *MinecraftServer) Install(serverUsername string) error {
 	pterm.DefaultSection.Println("Minecraft Installation Setup")
 
 	if !system.CheckJavaInstallation() {
-		return fmt.Errorf("java is not installed")
+		pterm.Warning.Println("Java is not installed. Minecraft requires Java to run.")
+		pterm.Info.Println("Attempting to install Java...")
+		if err := system.InstallJava(); err != nil {
+			return fmt.Errorf("failed to install Java: %v", err)
+		}
+		return fmt.Errorf("java is not installed. And Operation was attempted to install it. Please run the installation again to continue with Minecraft installation.")
 	} else {
 		if !system.IsJavaFunctional() {
 			return fmt.Errorf("java is installed but not functional")
