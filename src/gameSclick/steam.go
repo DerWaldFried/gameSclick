@@ -58,5 +58,5 @@ func startSteamInstallation() {
 		return
 	}
 
-	spinner.Success("SteamCMD installed successfully!")
+	spinner.Success("SteamCMD installed successfully! Going back to main menu...")
 }
