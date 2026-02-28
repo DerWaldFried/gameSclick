@@ -1,7 +1,10 @@
 package gameserver
 
 import (
+	"encoding/json"
 	"fmt"
+	"io"
+	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -17,6 +20,28 @@ type MinecraftServer struct {
 	Type    string
 	Version string
 	BaseDir string // The root directory for all game servers
+}
+
+// API Structure for fetching PaperMC versions and builds
+type PaperVersions struct {
+	Versions []string `json:"versions"`
+}
+
+type PaperBuilds struct {
+	Builds []int `json:"builds"`
+}
+
+type PaperBuildInfo struct {
+	Downloads struct {
+		Application struct {
+			Name string `json:"name"`
+		} `json:"application"`
+	} `json:"downloads"`
+}
+
+type FabricVersion struct {
+	Version string `json:"version"`
+	Stable  bool   `json:"stable"`
 }
 
 func (m *MinecraftServer) GetName() string {
@@ -96,6 +121,28 @@ func (m *MinecraftServer) Install(serverUsername string) error {
 	}
 }
 
+// Helperfunction to download a file from a URL and save it to a specified path
+func (m *MinecraftServer) downloadFile(filepath string, url string) error {
+	out, err := os.Create(filepath)
+	if err != nil {
+		return err
+	}
+	defer out.Close()
+
+	resp, err := http.Get(url)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("bad status: %s", resp.Status)
+	}
+
+	_, err = io.Copy(out, resp.Body)
+	return err
+}
+
 func (m *MinecraftServer) installVanilla() error {
 	pterm.Info.Println("Starting Vanilla Minecraft Installation...")
 
@@ -117,25 +164,124 @@ func (m *MinecraftServer) installVanilla() error {
 }
 
 func (m *MinecraftServer) installPaper() error {
-	pterm.Info.Println("Starting Paper Minecraft Installation...")
+	pterm.Info.Println("Abfrage der neuesten PaperMC Informationen...")
+	apiBase := "https://api.papermc.io/v2/projects/paper"
 
-	return nil
+	// 1. Get latest version
+	resp, err := http.Get(apiBase)
+	if err != nil {
+		return err
+	}
+	var vData PaperVersions
+	json.NewDecoder(resp.Body).Decode(&vData)
+	latestVersion := vData.Versions[len(vData.Versions)-1]
+
+	// 2. Get Latest Build
+	resp, err = http.Get(fmt.Sprintf("%s/versions/%s", apiBase, latestVersion))
+	if err != nil {
+		return err
+	}
+	var bData PaperBuilds
+	json.NewDecoder(resp.Body).Decode(&bData)
+	latestBuild := bData.Builds[len(bData.Builds)-1]
+
+	// 3. Call Build Info to get file name
+	resp, err = http.Get(fmt.Sprintf("%s/versions/%s/builds/%d", apiBase, latestVersion, latestBuild))
+	if err != nil {
+		return err
+	}
+	var biData PaperBuildInfo
+	json.NewDecoder(resp.Body).Decode(&biData)
+	fileName := biData.Downloads.Application.Name
+
+	// 4. Download URL and save to disk
+	downloadUrl := fmt.Sprintf("%s/versions/%s/builds/%d/downloads/%s", apiBase, latestVersion, latestBuild, fileName)
+	jarPath := filepath.Join(m.BaseDir, "paper.jar") // Wir nennen es konsistent paper.jar
+
+	pterm.Info.Printfln("Downloade Paper %s (Build %d)...", latestVersion, latestBuild)
+
+	return m.downloadFile(jarPath, downloadUrl)
 }
 
 func (m *MinecraftServer) installSpigot() error {
-	pterm.Info.Println("Starting Spigot Minecraft Installation...")
+	pterm.Info.Println("Vorbereitung: Spigot BuildTools...")
+	btUrl := "https://hub.spigotmc.org/jenkins/job/BuildTools/lastSuccessfulBuild/artifact/target/BuildTools.jar"
+	btPath := filepath.Join(m.BaseDir, "BuildTools.jar")
 
-	return nil
+	if err := m.downloadFile(btPath, btUrl); err != nil {
+		return err
+	}
+
+	pterm.Info.Println("Starte Kompilierung (Spigot 'latest'). Dies kann 5-10 Minuten dauern...")
+
+	// Wir führen BuildTools aus. --rev latest baut die aktuellste stabile Version.
+	cmd := exec.Command("java", "-jar", "BuildTools.jar", "--rev", "latest")
+	cmd.Dir = m.BaseDir
+	cmd.Stdout = os.Stdout // Damit der User den Fortschritt sieht
+	cmd.Stderr = os.Stderr
+
+	return cmd.Run()
 }
 
 func (m *MinecraftServer) installFabric() error {
-	pterm.Info.Println("Starting Fabric Minecraft Installation...")
+	pterm.Info.Println("Ermittle neueste Fabric-Komponenten...")
 
-	return nil
+	// 1. Neueste stabile MC-Version holen
+	var mcVersions []FabricVersion
+	resp, _ := http.Get("https://meta.fabricmc.net/v2/versions/game")
+	json.NewDecoder(resp.Body).Decode(&mcVersions)
+
+	var latestStableMC string
+	for _, v := range mcVersions {
+		if v.Stable {
+			latestStableMC = v.Version
+			break
+		}
+	}
+
+	// 2. Neuesten Loader holen
+	var loaders []FabricVersion
+	resp, _ = http.Get("https://meta.fabricmc.net/v2/versions/loader")
+	json.NewDecoder(resp.Body).Decode(&loaders)
+	latestLoader := loaders[0].Version
+
+	// 3. Download der "Server-Launch-Jar"
+	// URL-Schema: https://meta.fabricmc.net/v2/versions/loader/<game>/<loader>/<installer>/server/jar
+	// Wir nutzen hier den Standard-Installer 1.0.1
+	downloadUrl := fmt.Sprintf("https://meta.fabricmc.net/v2/versions/loader/%s/%s/1.0.1/server/jar", latestStableMC, latestLoader)
+	jarPath := filepath.Join(m.BaseDir, "fabric-server.jar")
+
+	pterm.Info.Printfln("Downloade Fabric für MC %s (Loader %s)...", latestStableMC, latestLoader)
+	return m.downloadFile(jarPath, downloadUrl)
 }
 
 func (m *MinecraftServer) installForge() error {
-	pterm.Info.Println("Starting Forge Minecraft Installation...")
+	// Forge ist leider schwer voll-automatisch zu finden, daher nutzen wir hier
+	// eine gängige stabile Version oder du müsstest eine Forge-API-Library nutzen.
+	mcVersion := "1.20.1"
+	forgeVersion := "47.2.0"
 
+	pterm.Info.Printfln("Downloade Forge Installer für %s...", mcVersion)
+
+	downloadUrl := fmt.Sprintf("https://maven.minecraftforge.net/net/minecraftforge/forge/%s-%s/forge-%s-%s-installer.jar",
+		mcVersion, forgeVersion, mcVersion, forgeVersion)
+	installerPath := filepath.Join(m.BaseDir, "forge-installer.jar")
+
+	if err := m.downloadFile(installerPath, downloadUrl); err != nil {
+		return err
+	}
+
+	pterm.Info.Println("Installiere Forge Server (headless)...")
+
+	// Forge muss installiert werden, um die eigentliche Server-Jar und Libraries zu generieren
+	cmd := exec.Command("java", "-jar", "forge-installer.jar", "--installServer")
+	cmd.Dir = m.BaseDir
+
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("forge installation fehlgeschlagen: %v", err)
+	}
+
+	// Installer aufräumen
+	os.Remove(installerPath)
 	return nil
 }
